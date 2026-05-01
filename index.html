@@ -176,6 +176,17 @@ else selectedPeople.push(p);
 render();
 }
 
+/* ⭐ 全員選択 */
+function selectAllCurrent(){
+let list=peopleAll[currentTab]||[];
+list.forEach(p=>{
+if(!selectedPeople.find(x=>x.id===p.id)){
+selectedPeople.push(p);
+}
+});
+render();
+}
+
 /* 道具 */
 function toggleGear(g){gearSelected[g]=!gearSelected[g];render();}
 function addGear(g){gearCount[g]++;render();}
@@ -238,12 +249,19 @@ document.getElementById("carSetup").innerHTML=
 cars.map((c,i)=>`車${i+1}(${c.size}) <button onclick="removeCar(${i})">削除</button>`).join("<br>");
 
 let list=peopleAll[currentTab]||[];
-document.getElementById("people").innerHTML=
-list.map(p=>`<div class="item ${selectedPeople.find(x=>x.id===p.id)?"selected":""}" onclick='toggle(${JSON.stringify(p)})'>${p.name}</div>`).join("");
+let html="";
+
+if(["A","B","C"].includes(currentTab)){
+html+=`<div class="item" onclick="selectAllCurrent()">全員選択</div>`;
+}
+
+html+=list.map(p=>`<div class="item ${selectedPeople.find(x=>x.id===p.id)?"selected":""}" onclick='toggle(${JSON.stringify(p)})'>${p.name}</div>`).join("");
+
+document.getElementById("people").innerHTML=html;
 
 document.getElementById("selected").innerHTML=selectedPeople.map(p=>p.name).join("<br>");
 
-/* 道具UI */
+/* 道具 */
 let gearHtml="";
 gearListData.forEach(g=>gearHtml+=`<div class="item ${gearSelected[g]?"selected":""}" onclick="toggleGear('${g}')">${g}</div>`);
 gearCountItems.forEach(g=>gearHtml+=`<div class="item">${g} <button onclick="addGear('${g}')">+</button> <button onclick="subGear('${g}')">-</button></div>`);
@@ -273,7 +291,10 @@ document.getElementById("unassignedGear").innerHTML=unGear;
 /* 車 */
 document.getElementById("cars").innerHTML=cars.map((c,i)=>{
 let remain=c.size-c.members.length;
-let members=sort(c.members).filter(m=>m.id!==c.driver?.id).map(m=>`<div onclick="removeMember(${i},'${m.id}')">${m.name}</div>`).join("");
+let members=sort(c.members)
+.filter(m=>m.id!==c.driver?.id)
+.map(m=>`<div onclick="removeMember(${i},'${m.id}')">${m.name}</div>`).join("");
+
 let gear=Object.keys(c.gear).map(g=>`<div onclick="removeGear(${i},'${g}')">${g}×${c.gear[g]}</div>`).join("")||"なし";
 
 return `
@@ -297,8 +318,13 @@ function forceFinalize(){goResult();}
 function goResult(){
 document.getElementById("result").innerHTML=
 cars.map((c,i)=>{
-let members=sort(c.members).map(m=>m.name).join(", ");
+let members=sort(c.members)
+.filter(m=>m.id!==c.driver?.id)
+.map(m=>m.name)
+.join(", ");
+
 let gear=Object.keys(c.gear).map(g=>g+"×"+c.gear[g]).join(", ");
+
 return `車${i+1}<br>運転手：${c.driver?c.driver.name:""}<br>${members}<br>道具：${gear}`;
 }).join("<br><br>");
 go(4);
