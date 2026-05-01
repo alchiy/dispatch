@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>遠征配車管理</title>
+<style>
+body{font-family:sans-serif;margin:0}
+header{background:#222;color:#fff;padding:10px;text-align:center}
+.screen{display:none;padding:10px}
+.active{display:block}
+.container{display:flex;gap:10px}
+.panel{flex:1;border:1px solid #ccc;padding:10px;min-height:250px}
+.item{padding:6px;margin:4px;border:1px solid #999;cursor:pointer}
+.selected{background:#cce5ff}
+.car{border:1px solid #666;margin:6px;padding:6px}
+.driver{color:blue;font-weight:bold;cursor:pointer}
+.big-btn{width:100%;padding:14px;font-size:18px;margin:8px 0}
+button{margin:4px;padding:6px}
+</style>
+</head>
+
+<body>
+<header>遠征配車管理</header>
+
+<!-- ① -->
+<div id="step1" class="screen active">
+<h2>① 車の台数</h2>
+<button onclick="addCar(8)">8人乗</button>
+<button onclick="addCar(7)">7人乗</button>
+<button onclick="addCar(6)">6人乗</button>
+<button onclick="addCar(5)">5人乗</button>
+<div id="carSetup"></div>
+<button onclick="go(2)">次へ</button>
+</div>
+
+<!-- ② -->
+<div id="step2" class="screen">
+<h2>② メンバー選択</h2>
+<button onclick="go(1)">戻る</button>
+
+<div>
+<button onclick="setTab('staff')">指導者</button>
+<button onclick="setTab('A')">Aクラス</button>
+<button onclick="setTab('B')">Bクラス</button>
+<button onclick="setTab('C')">Cクラス</button>
+<button onclick="setTab('A_parent')">A保護者</button>
+<button onclick="setTab('B_parent')">B保護者</button>
+<button onclick="setTab('C_parent')">C保護者</button>
+<button onclick="setTab('sibling')">兄弟</button>
+</div>
+
+<div class="container">
+<div class="panel" id="people"></div>
+<div class="panel" id="selected"></div>
+</div>
+
+<h3>道具</h3>
+<div class="container">
+<div class="panel" id="gearList"></div>
+<div class="panel" id="gearSelected"></div>
+</div>
+
+<button onclick="go(3)">次へ</button>
+</div>
+
+<!-- ③ -->
+<div id="step3" class="screen">
+<h2>③ 配車</h2>
+<button onclick="go(2)">戻る</button>
+
+<div class="container">
+<div class="panel">
+<h3>未配置</h3>
+<div id="unassigned"></div>
+<div id="unassignedGear"></div>
+</div>
+
+<div class="panel">
+<h3>配車</h3>
+<div id="cars"></div>
+</div>
+</div>
+
+<button onclick="finalize()">決定</button>
+<button onclick="forceFinalize()">未配置のまま決定</button>
+</div>
+
+<!-- ④ -->
+<div id="step4" class="screen">
+<h2>配車一覧</h2>
+<button onclick="go(3)">戻る</button>
+<button onclick="reset()">最初から</button>
+<div id="result"></div>
+</div>
+
+<script>
+let currentTab="staff";
+let cars=[];
+let selectedPeople=[];
+let selected=null;
+let selectedGear=null;
+let orderCounter=0;
+
+function make(type,name){return {id:type+"_"+name,name,type,order:orderCounter++};}
+function makeParent(name,role){return {id:name+"_"+role,name:name+" "+(role==="f"?"父":"母"),type:"parent",order:orderCounter++};}
+
+/* データ */
+const peopleAll={
+staff:["稲継監督","金尾監督","仲コーチ","山本コーチ","山口コーチ","さきさん"].map(n=>make("staff",n)),
+
+A:["かいり","ゆき","はるき","まさき","ひろと","ひかり","れい","しょう","ゆうた","そうしろう","しょうた","しどう","おうた","ユエン"].map(n=>make("player",n)),
+
+B:["ひかり","れい","しょう","ゆうた","そうしろう","しょうた","しどう","おうた","ユエン","しんや","かずま","けんや","こたろう","しょうま","はく"].map(n=>make("player",n)),
+
+C:["しんや","かずま","けんや","こたろう","しょうま","はく","ゆおん","こうせい","たけのすけ","なお","いすみ"].map(n=>make("player",n)),
+
+A_parent:[
+"光田","金本","佐藤ま","田平","森川","佐藤ゆ","大沼","柏村","外村","柳迫","足立","萩尾","ユエン"
+].flatMap(n=>[makeParent(n,"f"),makeParent(n,"m")]),
+
+B_parent:[
+"田平","森川","佐藤ゆ","大沼","柏村","外村","柳迫","萩尾","田中し","田中か"
+].flatMap(n=>[makeParent(n,"f"),makeParent(n,"m")])
+.concat([
+{id:"上野母",name:"上野 母",type:"parent",order:orderCounter++},
+{id:"富岡母",name:"富岡 母",type:"parent",order:orderCounter++}
+])
+.concat(["松尾","市原"].flatMap(n=>[makeParent(n,"f"),makeParent(n,"m")])),
+
+C_parent:[
+"田中し","田中か"
+].flatMap(n=>[makeParent(n,"f"),makeParent(n,"m")])
+.concat([
+{id:"上野母C",name:"上野 母",type:"parent",order:orderCounter++},
+{id:"富岡母C",name:"富岡 母",type:"parent",order:orderCounter++}
+])
+.concat(["松尾","市原","森谷","金本","大畑","萩尾"].flatMap(n=>[makeParent(n,"f"),makeParent(n,"m")])),
+
+sibling:["なつき","のどか","ぜん","みお","さわ","ゆあん","さらん"].map(n=>make("sibling",n))
+};
+
+/* 道具 */
+const gearListData=["試合セット","ボールバッグ","ノックバット","手提げバッグ","キャッチャー道具A","キャッチャー道具B","キャッチャー道具C","バット立て","バットヘルメ置き","ブルーシート","タープA","タープB","タープC","クーラーBox","その他"];
+const gearCountItems=["チームバット","イス","カゴ"];
+
+let gearSelected={},gearCount={};
+
+function resetGear(){
+gearSelected={};gearCount={};
+gearListData.forEach(g=>gearSelected[g]=false);
+gearCountItems.forEach(g=>gearCount[g]=0);
+["試合セット","ボールバッグ","ノックバット","手提げバッグ"].forEach(g=>gearSelected[g]=true);
+}
+resetGear();
+
+/* 共通 */
+function go(n){
+document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
+document.getElementById("step"+n).classList.add("active");
+render();
+}
+
+function sort(arr){
+const order={staff:0,parent:1,player:2,sibling:3};
+return arr.slice().sort((a,b)=>order[a.type]-order[b.type]||a.order-b.order);
+}
+
+/* 車 */
+function addCar(size){cars.push({size,members:[],driver:null,gear:{}});render();}
+function removeCar(i){cars.splice(i,1);render();}
+
+/* メンバー */
+function toggle(p){
+if(selectedPeople.find(x=>x.id===p.id)) selectedPeople=selectedPeople.filter(x=>x.id!==p.id);
+else selectedPeople.push(p);
+render();
+}
+
+/* 道具 */
+function toggleGear(g){gearSelected[g]=!gearSelected[g];render();}
+function addGear(g){gearCount[g]++;render();}
+function subGear(g){if(gearCount[g]>0)gearCount[g]--;render();}
+
+function selectPerson(id){selected=selectedPeople.find(p=>p.id===id);selectedGear=null;render();}
+function selectGear(g){selectedGear={name:g,qty:gearCount[g]||1};selected=null;render();}
+
+/* 配車 */
+function addToCar(i){
+let c=cars[i];
+
+if(selected){
+if(c.members.length>=c.size)return;
+c.members.push(selected);
+if(!c.driver&&selected.type==="parent")c.driver=selected;
+selectedPeople=selectedPeople.filter(p=>p.id!==selected.id);
+selected=null;
+}
+
+if(selectedGear){
+c.gear[selectedGear.name]=(c.gear[selectedGear.name]||0)+selectedGear.qty;
+if(gearCountItems.includes(selectedGear.name))gearCount[selectedGear.name]=0;
+else gearSelected[selectedGear.name]=false;
+selectedGear=null;
+}
+
+render();
+}
+
+function removeMember(i,id){
+let c=cars[i];
+let p=c.members.find(m=>m.id===id);
+c.members=c.members.filter(m=>m.id!==id);
+selectedPeople.push(p);
+render();
+}
+
+function removeDriver(i){
+let c=cars[i];
+if(!c.driver)return;
+selectedPeople.push(c.driver);
+c.members=c.members.filter(m=>m.id!==c.driver.id);
+c.driver=null;
+render();
+}
+
+function removeGear(i,g){
+let qty=cars[i].gear[g];
+delete cars[i].gear[g];
+if(gearCountItems.includes(g))gearCount[g]+=qty;
+else gearSelected[g]=true;
+render();
+}
+
+/* 描画 */
+function render(){
+
+document.getElementById("carSetup").innerHTML=
+cars.map((c,i)=>`車${i+1}(${c.size}) <button onclick="removeCar(${i})">削除</button>`).join("<br>");
+
+let list=peopleAll[currentTab]||[];
+document.getElementById("people").innerHTML=
+list.map(p=>`<div class="item ${selectedPeople.find(x=>x.id===p.id)?"selected":""}" onclick='toggle(${JSON.stringify(p)})'>${p.name}</div>`).join("");
+
+document.getElementById("selected").innerHTML=selectedPeople.map(p=>p.name).join("<br>");
+
+/* 道具UI */
+let gearHtml="";
+gearListData.forEach(g=>gearHtml+=`<div class="item ${gearSelected[g]?"selected":""}" onclick="toggleGear('${g}')">${g}</div>`);
+gearCountItems.forEach(g=>gearHtml+=`<div class="item">${g} <button onclick="addGear('${g}')">+</button> <button onclick="subGear('${g}')">-</button></div>`);
+document.getElementById("gearList").innerHTML=gearHtml;
+
+let gearSel="";
+gearListData.forEach(g=>{if(gearSelected[g])gearSel+=g+"<br>"});
+gearCountItems.forEach(g=>{if(gearCount[g]>0)gearSel+=g+"×"+gearCount[g]+"<br>"});
+document.getElementById("gearSelected").innerHTML=gearSel;
+
+/* 未配置 */
+document.getElementById("unassigned").innerHTML=
+sort(selectedPeople).map(p=>`<div class="item ${selected?.id===p.id?"selected":""}" onclick="selectPerson('${p.id}')">${p.name}</div>`).join("");
+
+/* 未配置道具 */
+let unGear="";
+gearListData.forEach(g=>{
+if(gearSelected[g]){
+unGear+=`<div class="item ${selectedGear?.name===g?"selected":""}" onclick="selectGear('${g}')">${g}</div>`;
+}});
+gearCountItems.forEach(g=>{
+if(gearCount[g]>0){
+unGear+=`<div class="item ${selectedGear?.name===g?"selected":""}" onclick="selectGear('${g}')">${g}×${gearCount[g]}</div>`;
+}});
+document.getElementById("unassignedGear").innerHTML=unGear;
+
+/* 車 */
+document.getElementById("cars").innerHTML=cars.map((c,i)=>{
+let remain=c.size-c.members.length;
+let members=sort(c.members).filter(m=>m.id!==c.driver?.id).map(m=>`<div onclick="removeMember(${i},'${m.id}')">${m.name}</div>`).join("");
+let gear=Object.keys(c.gear).map(g=>`<div onclick="removeGear(${i},'${g}')">${g}×${c.gear[g]}</div>`).join("")||"なし";
+
+return `
+<div class="car">
+車${i+1}(${c.size}) 残り${remain}
+<button class="big-btn" onclick="addToCar(${i})">車に乗せる</button>
+<div class="driver" onclick="removeDriver(${i})">運転手：${c.driver?c.driver.name:"未設定"}</div>
+${members}
+道具：${gear}
+</div>`;
+}).join("");
+}
+
+/* 結果 */
+function finalize(){
+if(selectedPeople.length>0)return alert("まだ全員乗ってないよ！");
+goResult();
+}
+function forceFinalize(){goResult();}
+
+function goResult(){
+document.getElementById("result").innerHTML=
+cars.map((c,i)=>{
+let members=sort(c.members).map(m=>m.name).join(", ");
+let gear=Object.keys(c.gear).map(g=>g+"×"+c.gear[g]).join(", ");
+return `車${i+1}<br>運転手：${c.driver?c.driver.name:""}<br>${members}<br>道具：${gear}`;
+}).join("<br><br>");
+go(4);
+}
+
+/* リセット */
+function reset(){
+cars=[];
+selectedPeople=[];
+selected=null;
+selectedGear=null;
+resetGear();
+go(1);
+}
+
+function setTab(t){currentTab=t;render();}
+
+render();
+</script>
+</body>
+</html>
